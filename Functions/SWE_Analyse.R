@@ -784,7 +784,7 @@ SWE_Analyse = function(state, opt){
         obj.MLE = log(HPHR.det(1, D, R)) +
           t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
         K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
-        +
+        
         for(k in 1:10){
           x.a = x.f + K %*% d.f
           x.a.bar = apply(x.a, 1, mean)
@@ -947,31 +947,31 @@ SWE_Analyse = function(state, opt){
         obj.MLE = log(HPHR.det(1, D, R)) +
           t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
         K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
-        +
-          for(k in 1:10){
-            x.a = x.f + K %*% d.f
-            x.a.bar = apply(x.a, 1, mean)
-            obj.MLE.old = obj.MLE
-            K.old = K
-            
-            Z = (x.f - x.a.bar) / sqrt(n - 1)
-            Z = cal_taper_Z_block(t(Z), bw, banding)
-            HZ = H %*% Z
-            D = svd(R.inv.root %*% HZ)$d
-            log.likelihood = function(lambda){
-              return(log(HPHR.det(lambda, D, R)) +
-                       t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
-            }
-            likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
-            lambda = likelihood.optimize$minimum
-            obj.MLE = likelihood.optimize$objective
-            K = Z %*% t(HZ) %*% HPHR.inv(lambda, HZ, R.inv, n)
-            
-            print(paste(k, obj.MLE.old, obj.MLE))
-            if(obj.MLE.old - obj.MLE < 1){
-              break
-            }
+        
+        for(k in 1:10){
+          x.a = x.f + K %*% d.f
+          x.a.bar = apply(x.a, 1, mean)
+          obj.MLE.old = obj.MLE
+          K.old = K
+          
+          Z = (x.f - x.a.bar) / sqrt(n - 1)
+          Z = cal_taper_Z_block(t(Z), bw, banding)
+          HZ = H %*% Z
+          D = svd(R.inv.root %*% HZ)$d
+          log.likelihood = function(lambda){
+            return(log(HPHR.det(lambda, D, R)) +
+                     t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
           }
+          likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+          lambda = likelihood.optimize$minimum
+          obj.MLE = likelihood.optimize$objective
+          K = Z %*% t(HZ) %*% HPHR.inv(lambda, HZ, R.inv, n)
+          
+          print(paste(k, obj.MLE.old, obj.MLE))
+          if(obj.MLE.old - obj.MLE < 1){
+            break
+          }
+        }
         obj.MLE = obj.MLE
         K = K.old
         

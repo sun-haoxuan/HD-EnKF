@@ -1,5 +1,6 @@
 rm(list = ls())
-setwd("~/EnKF_GTE")
+setwd("E:/Project/EnKF_GTE")
+# setwd("~/EnKF_GTE")
 library(tidyverse)
 library(foreach)
 library(doParallel)
@@ -10,4 +11,4 @@ mt = args[1]
 b = as.numeric(args[2])
 print(paste(mt, b))
 
-analyse = test_SWE(mt, b)
+analyse = test_SWE('band-iterwithinfl', 2)
