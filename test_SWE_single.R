@@ -59,6 +59,4 @@ test_SWE = function(mt, b = 0){
       RMSE_h_post = sqrt(mean(analyse$error[4, 5821:8700] ^ 2))
     )
   )
-  
-  return(analyse)
 }
