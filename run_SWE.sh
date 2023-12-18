@@ -1,20 +1,17 @@
-nohup Rscript Code/test_SWE.R band-inflation 2 > Output/temp/band-inflation_2.txt &
-nohup Rscript Code/test_SWE.R band-iteration 2 > Output/temp/band-iteration_2.txt &
-nohup Rscript Code/test_SWE.R band-iterwithinfl 2 > Output/temp/band-iterwithinfl_2.txt &
-nohup Rscript Code/test_SWE.R inflation-band 2 > Output/temp/inflation-band_2.txt &
-nohup Rscript Code/test_SWE.R inflation-bandwithinfl 2 > Output/temp/inflation-bandwithinfl_2.txt &
-nohup Rscript Code/test_SWE.R bandblock-inflation 2 > Output/temp/bandblock-inflation_2.txt &
-nohup Rscript Code/test_SWE.R bandblock-iteration 2 > Output/temp/bandblock-iteration_2.txt &
-nohup Rscript Code/test_SWE.R bandblock-iterwithinfl 2 > Output/temp/bandblock-iterwithinfl_2.txt &
-nohup Rscript Code/test_SWE.R inflation-bandblock 2 > Output/temp/inflation-bandblock_2.txt &
-nohup Rscript Code/test_SWE.R inflation-bandblockwithinfl 2 > Output/temp/inflation-bandblockwithinfl_2.txt &
-nohup Rscript Code/test_SWE.R band-inflation 3 > Output/temp/band-inflation_3.txt &
-nohup Rscript Code/test_SWE.R band-iteration 3 > Output/temp/band-iteration_3.txt &
-nohup Rscript Code/test_SWE.R band-iterwithinfl 3 > Output/temp/band-iterwithinfl_3.txt &
-nohup Rscript Code/test_SWE.R inflation-band 3 > Output/temp/inflation-band_3.txt &
-nohup Rscript Code/test_SWE.R inflation-bandwithinfl 3 > Output/temp/inflation-bandwithinfl_3.txt &
-nohup Rscript Code/test_SWE.R bandblock-inflation 3 > Output/temp/bandblock-inflation_3.txt &
-nohup Rscript Code/test_SWE.R bandblock-iteration 3 > Output/temp/bandblock-iteration_3.txt &
-nohup Rscript Code/test_SWE.R bandblock-iterwithinfl 3 > Output/temp/bandblock-iterwithinfl_3.txt &
-nohup Rscript Code/test_SWE.R inflation-bandblock 3 > Output/temp/inflation-bandblock_3.txt &
-nohup Rscript Code/test_SWE.R inflation-bandblockwithinfl 3 > Output/temp/inflation-bandblockwithinfl_3.txt &
+nohup Rscript Code/test_SWE.R banding 5e4 1 > Output/temp/banding_k5e4_1.txt &
+nohup Rscript Code/test_SWE.R banding 5e4 2 > Output/temp/banding_k5e4_2.txt &
+nohup Rscript Code/test_SWE.R banding 5e4 3 > Output/temp/banding_k5e4_3.txt &
+nohup Rscript Code/test_SWE.R banding 5e4 4 > Output/temp/banding_k5e4_4.txt &
+nohup Rscript Code/test_SWE.R banding 5e4 5 > Output/temp/banding_k5e4_5.txt &
+
+nohup Rscript Code/test_SWE.R tapering 5e4 1 > Output/temp/tapering_k5e4_1.txt &
+nohup Rscript Code/test_SWE.R tapering 5e4 2 > Output/temp/tapering_k5e4_2.txt &
+nohup Rscript Code/test_SWE.R tapering 5e4 3 > Output/temp/tapering_k5e4_3.txt &
+nohup Rscript Code/test_SWE.R tapering 5e4 4 > Output/temp/tapering_k5e4_4.txt &
+nohup Rscript Code/test_SWE.R tapering 5e4 5 > Output/temp/tapering_k5e4_5.txt &
+
+nohup Rscript Code/test_SWE.R GC 5e4 1 > Output/temp/GC_k5e4_1.txt &
+nohup Rscript Code/test_SWE.R GC 5e4 2 > Output/temp/GC_k5e4_2.txt &
+nohup Rscript Code/test_SWE.R GC 5e4 3 > Output/temp/GC_k5e4_3.txt &
+nohup Rscript Code/test_SWE.R GC 5e4 4 > Output/temp/GC_k5e4_4.txt &
+nohup Rscript Code/test_SWE.R GC 5e4 5 > Output/temp/GC_k5e4_5.txt &

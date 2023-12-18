@@ -18,21 +18,21 @@ L96_Analyse = function(state, option){
   n = option$n
   sigma.in = option$sigma.in
   method = option$method
-  
+  is.iter = option$is.iter
+  interval = option$interval
+
   nsite = length(p.o)
   nobs = length(S.o)
   ti = seq(h, h * S, h)
   
   ## Observation matrix ####
   H = matrix(0, nsite, p)
-  # H = Matrix(0, nsite, p, sparse = T)
   for(k in 1:nsite){
     H[k, p.o[k]] = 1
   }
   
   ## Observation Error Covariance ####
   R = matrix(0, nsite, nsite)
-  # R = Matrix(0, nsite, nsite, sparse = T)
   for(i in 1:nsite){
     for(j in 1:nsite){
       R[i,j] = sigma ^ 2 * rho ^ min(abs(i - j), nsite - abs(i-j))
@@ -42,9 +42,18 @@ L96_Analyse = function(state, option){
   R.ev = eigen(R)
   R.inv.root = R.ev$vectors %*% diag(R.ev$values ^ (-0.5)) %*% t(R.ev$vectors)
   
+  ## distance matrix
+  mat.dist = diag(0, p)
+  for(i in 1:(p - 1)){
+    for(j in (i + 1):p){
+      mat.dist[i, j] = mat.dist[j, i] = min(j - i, p - j + i)
+    }
+  }
+
   ## Output list ####
   cv = 0  ## convergence
   num = 0 ## observations
+  k = 0 ## iteration
   assimilate.errors = rep(NA, S)  ## RMSE at each step
   x.en.bar = matrix(NA, p, S)
   x.en.temp = x.t[, 1] + t(MASS::mvrnorm(n, rep(0, p), diag(p) * sigma.in))
@@ -72,6 +81,21 @@ L96_Analyse = function(state, option){
       d.f = y.o[p.o, num]  - H %*% x.f + t(MASS::mvrnorm(n, rep(0, nsite), R))
       d.f.bar = apply(d.f, 1, mean)
       
+      ### standard ####
+      if(method == 'standard'){
+        z = (x.f - x.f.bar) / sqrt(n - 1)
+        HZ = H %*% z
+        D = svd(R.inv.root %*% HZ)$d
+        K = z %*% t(z) %*% t(H) %*% HPHR.inv(1, HZ, R.inv, n)
+        obj.MLE = log(HPHR.det(1, D, R)) +
+          t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
+        
+        inflation.fator = NA
+        objective.likelihood = obj.MLE
+        iteration.number = NA
+        banding.bandwidth = NA
+      }
+      
       ### Oracle ####
       if(method == 'oracle'){
         z = (x.f - x.t[, i + 1]) / sqrt(n - 1)
@@ -87,219 +111,10 @@ L96_Analyse = function(state, option){
         banding.bandwidth = NA
       }
       
-      ### Wang & Bishop ####
-      if(method == 'Wang & Bishop'){
-        z = (x.f - x.f.bar) / sqrt(n - 1)
-        HZ = H %*% z
-        D = svd(R.inv.root %*% HZ)$d
-        lambda = (t(d.f.bar) %*% t(R.inv.root) %*% R.inv.root %*% d.f.bar - p)[1, 1] /
-          sum(diag(R.inv.root %*% HZ %*% t(HZ) %*% t(R.inv.root)))
-        lambda = max(lambda, 0.1)
-        K = lambda * z %*% t(z) %*% t(H) %*% HPHR.inv(lambda, HZ, R.inv, n)
-        x.f = sqrt(lambda) * (x.f - x.f.bar) + x.f.bar
-        obj.MLE = log(HPHR.det(lambda, D, R)) +
-          t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar
-        
-        inflation.fator = lambda
-        objective.likelihood = obj.MLE
-        iteration.number = NA
-        banding.bandwidth = NA
-      }
-      
       ### Inflation ####
       if(method == 'inflation'){
-        z = (x.f - x.f.bar) / sqrt(n - 1)
-        HZ = H %*% z
-        D = svd(R.inv.root %*% HZ)$d
-        log.likelihood = function(lambda){
-          return(log(HPHR.det(lambda, D, R)) +
-                   t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
-        }
-        likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
-        lambda = likelihood.optimize$minimum
-        obj.MLE = likelihood.optimize$objective
-        K = lambda * z %*% t(z) %*% t(H) %*% HPHR.inv(lambda, HZ, R.inv, n)
-        x.f = sqrt(lambda) * (x.f - x.f.bar) + x.f.bar
-        
-        inflation.fator = lambda
-        objective.likelihood = obj.MLE
-        iteration.number = NA
-        banding.bandwidth = NA
-      }
-      
-      ### Inflation & Iteration ####
-      if(method == 'inflation & iteration'){
-        z = (x.f - x.f.bar) / sqrt(n - 1)
-        HZ = H %*% z
-        D = svd(R.inv.root %*% HZ)$d
-        log.likelihood = function(lambda){
-          return(log(HPHR.det(lambda, D, R)) +
-                   t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
-        }
-        likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
-        lambda = likelihood.optimize$minimum
-        obj.MLE = likelihood.optimize$objective
-        K = lambda * z %*% t(z) %*% t(H) %*% HPHR.inv(lambda, HZ, R.inv, n)
-        x.f = sqrt(lambda) * (x.f - x.f.bar) + x.f.bar
-        
-        x.a = x.f + K %*% d.f
-        x.a.bar = apply(x.a, 1, mean)
-        for(k in 1:10){
-          obj.MLE.old = obj.MLE
-          
-          z = (x.f - x.a.bar) / sqrt(n - 1)
-          HZ = H %*% z
-          D = svd(R.inv.root %*% HZ)$d
-          log.likelihood = function(lambda){
-            return(log(HPHR.det(lambda, D, R)) +
-                     t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
-          }
-          likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
-          lambda = likelihood.optimize$minimum
-          obj.MLE = likelihood.optimize$objective
-          K = lambda * z %*% t(z) %*% t(H) %*% HPHR.inv(lambda, HZ, R.inv, n)
-          
-          if(obj.MLE.old - obj.MLE < 1){
-            break
-          }else{
-            x.a = x.f + K %*% d.f
-            x.a.bar = apply(x.a, 1, mean)
-          }
-        }
-        
-        inflation.fator = lambda
-        objective.likelihood = obj.MLE
-        iteration.number = k
-        banding.bandwidth = NA
-      }
-      
-      ### Banding ####
-      if(method == 'banding'){
-        bw = cal_bandwidth_L96(x.f)
-        z = cal_mapping_L96(x.f, bw)
-        HZ = H %*% z
-        D = svd(R.inv.root %*% HZ)$d
-        K = z %*% t(z) %*% t(H) %*% HPHR.inv(1, HZ, R.inv, n)
-        obj.MLE = log(HPHR.det(1, D, R)) +
-          t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
-        
-        inflation.fator = NA
-        objective.likelihood = obj.MLE
-        iteration.number = NA
-        banding.bandwidth = bw
-      }
-      
-      ### Banding & Inflation ####
-      if(method == 'banding & inflation'){
-        bw = cal_bandwidth_L96(x.f)
-        z = cal_mapping_L96(x.f, bw)
-        HZ = H %*% z
-        D = svd(R.inv.root %*% HZ)$d
-        log.likelihood = function(lambda){
-          return(log(HPHR.det(lambda, D, R)) +
-                   t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
-        }
-        likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
-        lambda = likelihood.optimize$minimum
-        obj.MLE = likelihood.optimize$objective
-        K = lambda * z %*% t(z) %*% t(H) %*% HPHR.inv(lambda, HZ, R.inv, n)
-        x.f = sqrt(lambda) * (x.f - x.f.bar) + x.f.bar
-        
-        inflation.fator = lambda
-        objective.likelihood = obj.MLE
-        iteration.number = NA
-        banding.bandwidth = bw
-      }
-      
-      ### Banding & Iteration ####
-      if(method == 'banding & iteration'){
-        bw = cal_bandwidth_L96(x.f)
-        z = cal_mapping_L96(x.f, bw)
-        HZ = H %*% z
-        D = svd(R.inv.root %*% HZ)$d
-        obj.MLE = log(HPHR.det(1, D, R)) +
-          t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
-        K = z %*% t(z) %*% t(H) %*% HPHR.inv(1, HZ, R.inv, n)
-        
-        x.a = x.f + K %*% d.f
-        x.a.bar = apply(x.a, 1, mean)
-        for(k in 1:10){
-          obj.MLE.old = obj.MLE
-          
-          z = cal_mapping_L96(x.f, bw, mu = x.a.bar)
-          HZ = H %*% z
-          D = svd(R.inv.root %*% HZ)$d
-          HZ = H %*% z
-          D = svd(R.inv.root %*% HZ)$d
-          obj.MLE = log(HPHR.det(1, D, R)) +
-            t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
-          K = z %*% t(z) %*% t(H) %*% HPHR.inv(1, HZ, R.inv, n)
-          
-          if(obj.MLE.old - obj.MLE < 1){
-            break
-          }else{
-            x.a = x.f + K %*% d.f
-            x.a.bar = apply(x.a, 1, mean)
-          }
-        }
-        
-        inflation.fator = NA
-        objective.likelihood = obj.MLE
-        iteration.number = k
-        banding.bandwidth = bw
-      }
-      
-      ### Banding & Inflation & Iteration ####
-      if(method == 'banding & inflation & iteration'){
-        bw = cal_bandwidth_L96(x.f)
-        z = cal_mapping_L96(x.f, bw)
-        HZ = H %*% z
-        D = svd(R.inv.root %*% HZ)$d
-        log.likelihood = function(lambda){
-          return(log(HPHR.det(lambda, D, R)) +
-                   t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
-        }
-        likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
-        lambda = likelihood.optimize$minimum
-        obj.MLE = likelihood.optimize$objective
-        K = lambda * z %*% t(z) %*% t(H) %*% HPHR.inv(lambda, HZ, R.inv, n)
-        x.f = sqrt(lambda) * (x.f - x.f.bar) + x.f.bar
-        
-        x.a = x.f + K %*% d.f
-        x.a.bar = apply(x.a, 1, mean)
-        for(k in 1:10){
-          obj.MLE.old = obj.MLE
-          
-          z = cal_mapping_L96(x.f, bw, mu = x.a.bar)
-          HZ = H %*% z
-          D = svd(R.inv.root %*% HZ)$d
-          log.likelihood = function(lambda){
-            return(log(HPHR.det(lambda, D, R)) +
-                     t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
-          }
-          likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
-          lambda = likelihood.optimize$minimum
-          obj.MLE = likelihood.optimize$objective
-          K = lambda * z %*% t(z) %*% t(H) %*% HPHR.inv(lambda, HZ, R.inv, n)
-          
-          if(obj.MLE.old - obj.MLE < 1){
-            break
-          }else{
-            x.a = x.f + K %*% d.f
-            x.a.bar = apply(x.a, 1, mean)
-          }
-        }
-        
-        inflation.fator = lambda
-        objective.likelihood = obj.MLE
-        iteration.number = k
-        banding.bandwidth = bw
-      }
-      
-      ### inflation iteration then banding ####
-      if(method == 'inflation iteration then banding'){
-        z = (x.f - x.f.bar) / sqrt(n - 1)
-        HZ = H %*% z
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        HZ = H %*% Z
         D = svd(R.inv.root %*% HZ)$d
         log.likelihood = function(lambda){
           return(log(HPHR.det(lambda, D, R)) +
@@ -308,52 +123,88 @@ L96_Analyse = function(state, option){
         likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
         lambda0 = lambda = likelihood.optimize$minimum
         obj.MLE = likelihood.optimize$objective
-        K = lambda * z %*% t(z) %*% t(H) %*% HPHR.inv(lambda, HZ, R.inv, n)
+        K = lambda * Z %*% t(HZ) %*% HPHR.inv(lambda, HZ, R.inv, n)
+        
         x.f = sqrt(lambda0) * (x.f - x.f.bar) + x.f.bar
         
-        x.a = x.f + K %*% d.f
-        x.a.bar = apply(x.a, 1, mean)
         for(k in 1:10){
+          x.a = x.f + K %*% d.f
+          x.a.bar = apply(x.a, 1, mean)
           obj.MLE.old = obj.MLE
+          K.old = K
           
-          z = (x.f - x.a.bar) / sqrt(n - 1)
-          HZ = H %*% z
+          Z = (x.f - x.a.bar) / sqrt(n - 1)
+          HZ = H %*% Z
           D = svd(R.inv.root %*% HZ)$d
           log.likelihood = function(lambda){
             return(log(HPHR.det(lambda, D, R)) +
                      t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
           }
           likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
-          lambda = likelihood.optimize$minimum
+          lambda0 = lambda = likelihood.optimize$minimum
           obj.MLE = likelihood.optimize$objective
-          K = lambda * z %*% t(z) %*% t(H) %*% HPHR.inv(lambda, HZ, R.inv, n)
+          K = lambda * Z %*% t(HZ) %*% HPHR.inv(lambda, HZ, R.inv, n)
           
           if(obj.MLE.old - obj.MLE < 1){
             break
-          }else{
-            x.a = x.f + K %*% d.f
-            x.a.bar = apply(x.a, 1, mean)
           }
         }
-        
-        z = (x.f - x.a.bar) / sqrt(n - 1)
-        # bw = cal_bandwidth_L96(z, GC)
-        # P.f = dgTMat_L96(x.f, bw, GC)
-        bw = Ccal_banding(as.matrix(t(z - apply(z, 1, mean))), p / 2)
-        P.f = bandP(bw, p) * z %*% t(z)
-        
-        P.f.eigen = eigs(as.matrix(P.f), n)
-        P.f.eigen.values = P.f.eigen$values
-        P.f.eigen.vectors = P.f.eigen$vectors
-        P.f.eigen.values[which(P.f.eigen.values < 1e-5)] = 0
-        P.f = P.f.eigen.vectors %*% diag(P.f.eigen.values) %*% t(P.f.eigen.vectors)
-        
-        P.f.root = P.f.eigen.vectors %*% diag(P.f.eigen.values ^ 0.5)
-        HZ = H %*% P.f.root
+        obj.MLE = obj.MLE
+        K = K.old
+
+        inflation.fator = lambda0
+        objective.likelihood = obj.MLE
+        iteration.number = k
+        banding.bandwidth = NA
+      }
+      
+      ### banding-inflation ####
+      if(method == 'banding-inflation'){
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        bw = cal_taper_bandwidth(t(Z), mat.dist, banding, interval)
+        Z = cal_taper_Z(t(Z), bw, mat.dist, banding)
+        HZ = H %*% Z
         D = svd(R.inv.root %*% HZ)$d
-        obj.MLE = log(HPHR.det(1, D, R)) +
-          t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
-        K = P.f %*% t(H) %*% HPHR.inv(1, HZ, R.inv, n)
+        log.likelihood = function(lambda){
+          return(log(HPHR.det(lambda, D, R)) +
+                   t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, ncol(Z)) %*% d.f.bar)
+        }
+        likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+        lambda0 = lambda = likelihood.optimize$minimum
+        obj.MLE = likelihood.optimize$objective
+        K = lambda * Z %*% t(HZ) %*% HPHR.inv(lambda, HZ, R.inv, ncol(Z))
+        
+        x.f = sqrt(lambda0) * (x.f - x.f.bar) + x.f.bar
+
+        k = NA
+        if(is.iter){
+          for(k in 1:10){
+            x.a = x.f + K %*% d.f
+            x.a.bar = apply(x.a, 1, mean)
+            obj.MLE.old = obj.MLE
+            K.old = K
+            
+            Z = (x.f - x.a.bar) / sqrt(n - 1)
+            Z = cal_taper_Z(t(Z), bw, mat.dist, banding)
+            HZ = H %*% Z
+            D = svd(R.inv.root %*% HZ)$d
+            log.likelihood = function(lambda){
+              return(log(HPHR.det(lambda, D, R)) +
+                       t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, ncol(Z)) %*% d.f.bar)
+            }
+            likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+            lambda0 = lambda = likelihood.optimize$minimum
+            obj.MLE = likelihood.optimize$objective
+            K = lambda * Z %*% t(HZ) %*% HPHR.inv(lambda, HZ, R.inv, ncol(Z))
+            
+            if(obj.MLE.old - obj.MLE < 1){
+              break
+            }
+          }
+          obj.MLE = obj.MLE
+          K = K.old
+        }
+        
         
         inflation.fator = lambda0
         objective.likelihood = obj.MLE
@@ -361,62 +212,327 @@ L96_Analyse = function(state, option){
         banding.bandwidth = bw
       }
       
-      ### GC ####
-      if(method == 'GC'){
-        z = (x.f - x.f.bar) / sqrt(n - 1)
-        bw = cal_GTE_bandwidth(t(z), dist_dim1_circ, GC, tol = 1)
-        P.f = cal_taper_cov_L96(t(z), bw, dist_dim1_circ, GC)
-        P.f.eigen = RSpectra::eigs(as.matrix(P.f), n)
-        P.f.eigen.values = P.f.eigen$values
-        P.f.eigen.vectors = P.f.eigen$vectors
-        P.f.eigen.values[which(P.f.eigen.values < 1e-5)] = 0
-        P.f = P.f.eigen.vectors %*% diag(P.f.eigen.values) %*% t(P.f.eigen.vectors)
-        P.f.root = P.f.eigen.vectors %*% diag(P.f.eigen.values ^ 0.5)
-        HZ = H %*% P.f.root
-        D = svd(R.inv.root %*% HZ)$d
-        obj.MLE = log(HPHR.det(1, D, R)) +
-          t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
-        K = P.f %*% t(H) %*% HPHR.inv(1, HZ, R.inv, n)
-        
-        inflation.fator = NA
-        objective.likelihood = obj.MLE
-        iteration.number = NA
-        banding.bandwidth = bw
-      }
-      
-      ### inflation then GC ####
-      if(method == 'inflation then GC'){
-        z = (x.f - x.f.bar) / sqrt(n - 1)
-        HZ = H %*% z
+      ### tapering-inflation ####
+      if(method == 'tapering-inflation'){
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        bw = cal_taper_bandwidth(t(Z), mat.dist, tapering, interval)
+        Z = cal_taper_Z(t(Z), bw, mat.dist, tapering)
+        HZ = H %*% Z
         D = svd(R.inv.root %*% HZ)$d
         log.likelihood = function(lambda){
           return(log(HPHR.det(lambda, D, R)) +
                    t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
         }
         likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
-        lambda = likelihood.optimize$minimum
-        x.f = sqrt(lambda) * (x.f - x.f.bar) + x.f.bar
+        lambda0 = lambda = likelihood.optimize$minimum
+        obj.MLE = likelihood.optimize$objective
+        K = lambda * Z %*% t(HZ) %*% HPHR.inv(lambda, HZ, R.inv, ncol(Z))
         
-        bw = cal_GTE_bandwidth(t(z), dist_dim1_circ, GC, tol = 1)
-        P.f = cal_taper_cov_L96(t(z), bw, dist_dim1_circ, GC)
-        P.f.eigen = RSpectra::eigs(as.matrix(P.f), n)
-        P.f.eigen.values = P.f.eigen$values
-        P.f.eigen.vectors = P.f.eigen$vectors
-        P.f.eigen.values[which(P.f.eigen.values < 1e-5)] = 0
-        P.f = P.f.eigen.vectors %*% diag(P.f.eigen.values) %*% t(P.f.eigen.vectors)
-        P.f.root = P.f.eigen.vectors %*% diag(P.f.eigen.values ^ 0.5)
-        HZ = H %*% P.f.root
-        D = svd(R.inv.root %*% HZ)$d
-        obj.MLE = log(HPHR.det(1, D, R)) +
-          t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
-        K = P.f %*% t(H) %*% HPHR.inv(1, HZ, R.inv, n)
+        x.f = sqrt(lambda0) * (x.f - x.f.bar) + x.f.bar
         
-        inflation.fator = lambda
+        k = NA
+        if(is.iter){
+          for(k in 1:10){
+            x.a = x.f + K %*% d.f
+            x.a.bar = apply(x.a, 1, mean)
+            obj.MLE.old = obj.MLE
+            K.old = K
+            
+            Z = (x.f - x.a.bar) / sqrt(n - 1)
+            Z = cal_taper_Z(t(Z), bw, mat.dist, tapering)
+            HZ = H %*% Z
+            D = svd(R.inv.root %*% HZ)$d
+            log.likelihood = function(lambda){
+              return(log(HPHR.det(lambda, D, R)) +
+                       t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
+            }
+            likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+            lambda0 = lambda = likelihood.optimize$minimum
+            obj.MLE = likelihood.optimize$objective
+            K = lambda * Z %*% t(HZ) %*% HPHR.inv(lambda, HZ, R.inv, ncol(Z))
+            
+            if(obj.MLE.old - obj.MLE < 1){
+              break
+            }
+          }
+          obj.MLE = obj.MLE
+          K = K.old
+        }
+        
+        
+        inflation.fator = lambda0
         objective.likelihood = obj.MLE
-        iteration.number = NA
+        iteration.number = k
         banding.bandwidth = bw
       }
       
+      ### GC-inflation ####
+      if(method == 'GC-inflation'){
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        bw = cal_taper_bandwidth(t(Z), mat.dist, GC, interval)
+        Z = cal_taper_Z(t(Z), bw, mat.dist, GC)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        log.likelihood = function(lambda){
+          return(log(HPHR.det(lambda, D, R)) +
+                   t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, ncol(Z)) %*% d.f.bar)
+        }
+        likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+        lambda0 = lambda = likelihood.optimize$minimum
+        obj.MLE = likelihood.optimize$objective
+        K = lambda * Z %*% t(HZ) %*% HPHR.inv(lambda, HZ, R.inv, ncol(Z))
+        
+        x.f = sqrt(lambda0) * (x.f - x.f.bar) + x.f.bar
+        
+        k = NA
+        if(is.iter){
+          for(k in 1:10){
+            x.a = x.f + K %*% d.f
+            x.a.bar = apply(x.a, 1, mean)
+            obj.MLE.old = obj.MLE
+            K.old = K
+            
+            Z = (x.f - x.a.bar) / sqrt(n - 1)
+            Z = cal_taper_Z(t(Z), bw, mat.dist, GC)
+            HZ = H %*% Z
+            D = svd(R.inv.root %*% HZ)$d
+            log.likelihood = function(lambda){
+              return(log(HPHR.det(lambda, D, R)) +
+                       t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
+            }
+            likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+            lambda0 = lambda = likelihood.optimize$minimum
+            obj.MLE = likelihood.optimize$objective
+            K = lambda * Z %*% t(HZ) %*% HPHR.inv(lambda, HZ, R.inv, n)
+            
+            if(obj.MLE.old - obj.MLE < 1){
+              break
+            }
+          }
+          obj.MLE = obj.MLE
+          K = K.old
+        }
+        
+        inflation.fator = lambda0
+        objective.likelihood = obj.MLE
+        iteration.number = k
+        banding.bandwidth = bw
+      }
+
+      ### banding-ev-p ####
+      if(method == 'banding-ev-p'){
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        bw = cal_taper_bandwidth(t(Z), mat.dist, banding, interval)
+        Z = cal_taper_Z(t(Z), bw, mat.dist, banding, ndim = p)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        log.likelihood = function(lambda){
+          return(log(HPHR.det(lambda, D, R)) +
+                   t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, ncol(Z)) %*% d.f.bar)
+        }
+        likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+        lambda0 = lambda = likelihood.optimize$minimum
+        obj.MLE = likelihood.optimize$objective
+        K = lambda * Z %*% t(HZ) %*% HPHR.inv(lambda, HZ, R.inv, ncol(Z))
+
+        x.f = sqrt(lambda0) * (x.f - x.f.bar) + x.f.bar
+
+        k = NA
+        if(is.iter){
+          for(k in 1:10){
+            x.a = x.f + K %*% d.f
+            x.a.bar = apply(x.a, 1, mean)
+            obj.MLE.old = obj.MLE
+            K.old = K
+
+            Z = (x.f - x.a.bar) / sqrt(n - 1)
+            Z = cal_taper_Z(t(Z), bw, mat.dist, banding, ndim = p)
+            HZ = H %*% Z
+            D = svd(R.inv.root %*% HZ)$d
+            log.likelihood = function(lambda){
+              return(log(HPHR.det(lambda, D, R)) +
+                       t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, ncol(Z)) %*% d.f.bar)
+            }
+            likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+            lambda0 = lambda = likelihood.optimize$minimum
+            obj.MLE = likelihood.optimize$objective
+            K = lambda * Z %*% t(HZ) %*% HPHR.inv(lambda, HZ, R.inv, ncol(Z))
+
+            if(obj.MLE.old - obj.MLE < 1){
+              break
+            }
+          }
+          obj.MLE = obj.MLE
+          K = K.old
+        }
+
+        inflation.fator = lambda0
+        objective.likelihood = obj.MLE
+        iteration.number = k
+        banding.bandwidth = bw
+      }
+
+      ### tapering-ev-p ####
+      if(method == 'tapering-ev-p'){
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        bw = cal_taper_bandwidth(t(Z), mat.dist, tapering, interval)
+        Z = cal_taper_Z(t(Z), bw, mat.dist, tapering, ndim = p)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        log.likelihood = function(lambda){
+          return(log(HPHR.det(lambda, D, R)) +
+                   t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, ncol(Z)) %*% d.f.bar)
+        }
+        likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+        lambda0 = lambda = likelihood.optimize$minimum
+        obj.MLE = likelihood.optimize$objective
+        K = lambda * Z %*% t(HZ) %*% HPHR.inv(lambda, HZ, R.inv, ncol(Z))
+
+        x.f = sqrt(lambda0) * (x.f - x.f.bar) + x.f.bar
+
+        k = NA
+        if(is.iter){
+          for(k in 1:10){
+            x.a = x.f + K %*% d.f
+            x.a.bar = apply(x.a, 1, mean)
+            obj.MLE.old = obj.MLE
+            K.old = K
+
+            Z = (x.f - x.a.bar) / sqrt(n - 1)
+            Z = cal_taper_Z(t(Z), bw, mat.dist, tapering, ndim = p)
+            HZ = H %*% Z
+            D = svd(R.inv.root %*% HZ)$d
+            log.likelihood = function(lambda){
+              return(log(HPHR.det(lambda, D, R)) +
+                       t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, ncol(Z)) %*% d.f.bar)
+            }
+            likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+            lambda0 = lambda = likelihood.optimize$minimum
+            obj.MLE = likelihood.optimize$objective
+            K = lambda * Z %*% t(HZ) %*% HPHR.inv(lambda, HZ, R.inv, ncol(Z))
+
+            if(obj.MLE.old - obj.MLE < 1){
+              break
+            }
+          }
+          obj.MLE = obj.MLE
+          K = K.old
+        }
+        
+        inflation.fator = lambda0
+        objective.likelihood = obj.MLE
+        iteration.number = k
+        banding.bandwidth = bw
+      }
+
+      ### GC-ev-p ####
+      if(method == 'GC-ev-p'){
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        bw = cal_taper_bandwidth(t(Z), mat.dist, GC, interval)
+        Z = cal_taper_Z(t(Z), bw, mat.dist, GC, ndim = p)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        log.likelihood = function(lambda){
+          return(log(HPHR.det(lambda, D, R)) +
+                   t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, ncol(Z)) %*% d.f.bar)
+        }
+        likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+        lambda0 = lambda = likelihood.optimize$minimum
+        obj.MLE = likelihood.optimize$objective
+        K = lambda * Z %*% t(HZ) %*% HPHR.inv(lambda, HZ, R.inv, ncol(Z))
+
+        x.f = sqrt(lambda0) * (x.f - x.f.bar) + x.f.bar
+
+        k = NA
+        if(is.iter){
+          for(k in 1:10){
+            x.a = x.f + K %*% d.f
+            x.a.bar = apply(x.a, 1, mean)
+            obj.MLE.old = obj.MLE
+            K.old = K
+
+            Z = (x.f - x.a.bar) / sqrt(n - 1)
+            Z = cal_taper_Z(t(Z), bw, mat.dist, GC, ndim = p)
+            HZ = H %*% Z
+            D = svd(R.inv.root %*% HZ)$d
+            log.likelihood = function(lambda){
+              return(log(HPHR.det(lambda, D, R)) +
+                       t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, ncol(Z)) %*% d.f.bar)
+            }
+            likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+            lambda0 = lambda = likelihood.optimize$minimum
+            obj.MLE = likelihood.optimize$objective
+            K = lambda * Z %*% t(HZ) %*% HPHR.inv(lambda, HZ, R.inv, ncol(Z))
+
+            if(obj.MLE.old - obj.MLE < 1){
+              break
+            }
+          }
+          obj.MLE = obj.MLE
+          K = K.old
+        }
+
+        inflation.fator = lambda0
+        objective.likelihood = obj.MLE
+        iteration.number = k
+        banding.bandwidth = bw
+      }
+      
+      ### banding-noevadj ####
+      if(method == 'banding-noevadj'){
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        bw = cal_taper_bandwidth(t(Z), mat.dist, banding, interval)
+        mat.dist.taper = diag(1, p)
+        for(i1 in 1:(p - 1)){
+          for(j1 in (i1 + 1):p){
+            mat.dist.taper[i1, j1] = mat.dist.taper[j1, i1] = banding(mat.dist[i1, j1] / bw)
+          }
+        }
+        P = Z %*% t(Z) * mat.dist.taper
+        log.likelihood = function(lambda){
+          return(log(det(lambda * P+R)) +
+                   t(d.f.bar) %*% solve(lambda * P + R) %*% d.f.bar)
+        }
+        likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+        lambda0 = lambda = likelihood.optimize$minimum
+        obj.MLE = likelihood.optimize$objective
+        K = lambda * P %*% solve(lambda * P + R)
+        
+        x.f = sqrt(lambda0) * (x.f - x.f.bar) + x.f.bar
+        
+        k = NA
+        if(is.iter){
+          for(k in 1:10){
+            x.a = x.f + K %*% d.f
+            x.a.bar = apply(x.a, 1, mean)
+            obj.MLE.old = obj.MLE
+            K.old = K
+            
+            Z = (x.f - x.f.bar) / sqrt(n - 1)
+            P = Z %*% t(Z) * mat.dist.taper
+            log.likelihood = function(lambda){
+              return(log(det(lambda * P+R)) +
+                       t(d.f.bar) %*% solve(lambda * P + R) %*% d.f.bar)
+            }
+            likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+            lambda0 = lambda = likelihood.optimize$minimum
+            obj.MLE = likelihood.optimize$objective
+            K = lambda * P %*% solve(lambda * P + R)
+            
+            if(obj.MLE.old - obj.MLE < 1){
+              break
+            }
+          }
+          obj.MLE = obj.MLE
+          K = K.old
+        }
+        
+        inflation.fator = lambda0
+        objective.likelihood = obj.MLE
+        iteration.number = k
+        banding.bandwidth = bw
+      }
+
       ### Update ####
       x.en.temp = x.f + K %*% d.f
       x.en.bar[, i + 1] = apply(x.en.temp, 1, mean)
@@ -434,6 +550,7 @@ L96_Analyse = function(state, option){
       break
     }
   }
+  print(sqrt(mean(assimilate.errors[1001:2000] ^ 2)))
   
   output = list(
     analyse = x.en.bar, 

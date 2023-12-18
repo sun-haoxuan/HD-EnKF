@@ -1,20 +1,21 @@
 rm(list = ls())
-setwd("E:/Project/EnKF_GTE")
+# setwd("E:/Project/EnKF_GTE")
+setwd("~/EnKF_GTE")
 library(tidyverse)
 library(foreach)
 library(doParallel)
 
-source('Code/Functions/cal_GTE_bandwidth.R')
+# source('Code/Functions/cal_GTE_bandwidth.R')
+# source('Code/Functions/ev_adjust.R')
 source('Code/Functions/cal_HPHR.R')
 source('Code/Functions/cal_RMSE.R')
-source('Code/Functions/ev_adjust.R')
 source('Code/Functions/SWE_State.R')
 source('Code/Functions/SWE_Forecast.R')
 source('Code/Functions/SWE_Analyse.R')
-source('Code/Functions/RK4.R')
-source('Code/Functions/taper_functions.R')
-source('Code/Functions/dist_functions.R')
-source('Code/cal_taper_cov_SWE.R')
+# source('Code/Functions/RK4.R')
+# source('Code/Functions/taper_functions.R')
+# source('Code/Functions/dist_functions.R')
+source('Code/Functions/cal_taper_cov_SWE.R')
 # Rcpp::sourceCpp('Code/Functions/cal_bandwidth_m0.cpp')
 
 set.seed(1234)
@@ -39,7 +40,7 @@ opt = list(
   vf = 1, # for Wrong R
   ## Assimilation Step
   S.o.seq = 360, # assimilate every 3h
-  S.o.start = 61, ## Start of the observation
+  S.o.start = 60, ## Start of the observation
   S.o.end = 5820, # assimilate 48h, then forecast 24h
   S = 8700,
   ## Assimilation
@@ -50,9 +51,9 @@ opt = list(
   method = 'standard'
 )
 state = SWE_State(opt)
-analyse = SWE_Analyse(state, opt)
+# analyse = SWE_Analyse(state, opt)
 
-t1 = Sys.time()
+t0 = Sys.time()
 
 opt$k = opt$k.set
 
@@ -99,19 +100,20 @@ nobs <- (S.o.end - S.o.start) %/% S.o.seq + 1 # forecast 1h, then assimilate
 ndim <- ngrid * 3
 nid <- length(id)
 xobs <- ny * nid * 3 # observe h only
-coor = data.frame(
-  x = rep(1:nx, times = ny),
-  y = rep(1:ny, each = nx)
-)
-ncoor = nrow(coor)
-digits = 1
-mat.dist = diag(0, ncoor)
-for(i in 1:(ncoor - 1)){
-  for(j in (i + 1):ncoor){
-    d_ij = round(sqrt(sum((coor[i, ] - coor[j, ]) ^ 2)), digits)
-    mat.dist[i, j] = mat.dist[j, i] = d_ij
-  }
-}
+# coor = data.frame(
+#   x = rep(1:nx, times = ny),
+#   y = rep(1:ny, each = nx)
+# )
+# ncoor = nrow(coor)
+# digits = 1
+# mat.dist = diag(0, ncoor)
+# for(i in 1:(ncoor - 1)){
+#   for(j in (i + 1):ncoor){
+#     d_ij = round(sqrt(sum((coor[i, ] - coor[j, ]) ^ 2)), digits)
+#     mat.dist[i, j] = mat.dist[j, i] = d_ij
+#   }
+# }
+load("Output/matrix_distance.Rdata")
 
 ## Observation Matrix ####
 H <- matrix(0, nrow = xobs, ncol = ndim)
@@ -258,19 +260,19 @@ for(t in 1:(S - 1)){
     # iteration.number = NA
     # banding.bandwidth = NA
     
-    ### inflation & iteration ####
-    Z = (x.f - x.f.bar) / sqrt(n - 1)
-    HZ = H %*% Z
-    D = svd(R.inv.root %*% HZ)$d
-    log.likelihood = function(lambda){
-      return(log(HPHR.det(lambda, D, R)) +
-               t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
-    }
-    likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
-    lambda0 = lambda = likelihood.optimize$minimum
-    obj.MLE = likelihood.optimize$objective
-    K = lambda * Z %*% t(HZ) %*% HPHR.inv(lambda, HZ, R.inv, n)
-
+    # ### inflation & iteration ####
+    # Z = (x.f - x.f.bar) / sqrt(n - 1)
+    # HZ = H %*% Z
+    # D = svd(R.inv.root %*% HZ)$d
+    # log.likelihood = function(lambda){
+    #   return(log(HPHR.det(lambda, D, R)) +
+    #            t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
+    # }
+    # likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+    # lambda0 = lambda = likelihood.optimize$minimum
+    # obj.MLE = likelihood.optimize$objective
+    # K = lambda * Z %*% t(HZ) %*% HPHR.inv(lambda, HZ, R.inv, n)
+    # 
     # for(k in 1:10){
     #   x.a = x.f + K %*% d.f
     #   x.a.bar = apply(x.a, 1, mean)
@@ -292,40 +294,56 @@ for(t in 1:(S - 1)){
     #     break
     #   }
     # }
-
-    x.f = sqrt(lambda0) * (x.f - x.f.bar) + x.f.bar
-
-    inflation.fator = lambda0
-    objective.likelihood = obj.MLE
-    iteration.number = NA
-    banding.bandwidth = NA
-    
-    # ### inflation+taper ####
-    # Z = (x.f - x.f.bar) / sqrt(n - 1)
-    # HZ = H %*% Z
-    # D = svd(R.inv.root %*% HZ)$d
-    # log.likelihood = function(lambda){
-    #   return(log(HPHR.det(lambda, D, R)) +
-    #            t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
-    # }
-    # likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
-    # lambda = likelihood.optimize$minimum
     # 
-    # x.f = sqrt(lambda) * (x.f - x.f.bar) + x.f.bar  ## before all after ?
-    # Z = sqrt(lambda) * Z
+    # x.f = sqrt(lambda0) * (x.f - x.f.bar) + x.f.bar
     # 
-    # obj.taper = cal_taper_cov_SWE(t(Z), mat.dist, GC)
-    # Z = obj.taper$Z
-    # HZ = H %*% Z
-    # D = svd(R.inv.root %*% HZ)$d
-    # obj.MLE = log(HPHR.det(1, D, R)) +
-    #   t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
-    # K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
-    # 
-    # inflation.fator = lambda
+    # inflation.fator = lambda0
     # objective.likelihood = obj.MLE
     # iteration.number = NA
-    # banding.bandwidth = obj.taper$bandwidth
+    # banding.bandwidth = NA
+    
+    ### inflation+taper ####
+    Z = (x.f - x.f.bar) / sqrt(n - 1)
+    HZ = H %*% Z
+    D = svd(R.inv.root %*% HZ)$d
+    log.likelihood = function(lambda){
+      return(log(HPHR.det(lambda, D, R)) +
+               t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
+    }
+    likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+    lambda = likelihood.optimize$minimum
+    
+    bw = cal_taper_bandwidth_total(t(Z), mat.dist, GC, c(0, 10 * max(mat.dist)))
+    print(bw)
+    Sigma.hat = Z %*% t(Z)
+    mat.dist.taper = diag(1, ncoor)
+    for(i in 1:(ncoor - 1)){
+      for(j in (i + 1):ncoor){
+        mat.dist.taper[i, j] = mat.dist.taper[j, i] = GC(mat.dist[i, j] / bw)
+      }
+    }
+    for(nvar1 in 0:2){
+      Sigma.hat[ncoor * nvar1 + 1:ncoor, ncoor * nvar1 + 1:ncoor] = mat.dist.taper * Sigma.hat[ncoor * nvar1 + 1:ncoor, ncoor * nvar1 + 1:ncoor]
+    }
+    for(nvar1 in 0:2){
+      for(nvar2 in nvar1:2){
+        Sigma.hat[ncoor * nvar1 + 1:ncoor, ncoor * nvar2 + 1:ncoor] = mat.dist.taper * Sigma.hat[ncoor * nvar1 + 1:ncoor, ncoor * nvar2 + 1:ncoor]
+        Sigma.hat[ncoor * nvar2 + 1:ncoor, ncoor * nvar1 + 1:ncoor] = mat.dist.taper * Sigma.hat[ncoor * nvar2 + 1:ncoor, ncoor * nvar1 + 1:ncoor]
+      }
+    }
+    Sigma.hat.eigen = eigen(Sigma.hat)
+    Sigma.hat.eigen.values = Sigma.hat.eigen$values
+    Sigma.hat.eigen.vectors = Sigma.hat.eigen$vectors
+    Sigma.hat.eigen.values[which(Sigma.hat.eigen.values < 1e-5)] = 0
+    Sigma.tilde = Sigma.hat.eigen.vectors %*% diag(Sigma.hat.eigen.values) %*% t(Sigma.hat.eigen.vectors)
+    K = Sigma.tilde %*% t(H) %*% solve(H %*% Sigma.tilde %*% t(H) + R)
+    
+    x.f = sqrt(lambda0) * (x.f - x.f.bar) + x.f.bar
+
+    inflation.fator = lambda
+    objective.likelihood = AN
+    iteration.number = NA
+    banding.bandwidth = bw
     
     ### Update ####
     x.en.temp = x.f + K %*% d.f
@@ -335,6 +353,7 @@ for(t in 1:(S - 1)){
     vec.iteration.number[num] = iteration.number
     vec.banding.bandwidth[, num] = banding.bandwidth
     print(paste('Step', t, 'error', round(assimilate.errors[t], 3)))
+    print(Sys.time() - t0)
   }
   assimilate.errors[t + 1] = RMSE(x.en.bar[, t + 1], x.t[, t + 1])
   
@@ -343,11 +362,10 @@ for(t in 1:(S - 1)){
     break
   }
 }
-t2 = Sys.time()
-print(t2 - t1)
+print(Sys.time() - t0)
 plot(assimilate.errors)
 sqrt(mean(assimilate.errors[2941:5820] ^ 2))
 sqrt(mean(assimilate.errors[5821:8700] ^ 2))
 analyse.taper = x.en.bar
 error.taper = assimilate.errors
-save.image('SWE_refine_inflation.Rdata')
+save.image('SWE_test.Rdata')

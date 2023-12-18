@@ -23,6 +23,16 @@ banding = function(z){
   }
 }
 
+tapering = function(z){
+  if(z <= 0.5){
+    return(1)
+  }else if(z > 0.5 & z <=1){
+    return(2 - 2 * z)  
+  }else{
+    return(0)
+  }
+}
+
 GC = function(z){
   z = z * 2
   if(z >= 0 & z <= 1){

@@ -7,6 +7,8 @@ source('Code/test_SWE_single.R')
 
 args = commandArgs(trailingOnly = TRUE)
 mt = args[1]
-b = as.numeric(args[2])
-print(paste(mt, b))
-test_SWE(mt, b)
+k.set = as.numeric(args[2])
+b = as.numeric(args[3])
+print(paste(mt, k.set, b))
+
+test_SWE(mt, k.set, b)

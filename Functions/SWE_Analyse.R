@@ -43,7 +43,7 @@ SWE_Analyse = function(state, opt){
   dx <- L / nx
   dy <- D / (ny - 1)
   nobs <- (S.o.end - S.o.start) %/% S.o.seq + 1 # forecast 1h, then assimilate
-  ndim <- ngrid * 3
+  p = ndim <- ngrid * 3
   nid <- length(id)
   xobs <- ny * nid * 3 # observe h only
   
@@ -156,6 +156,8 @@ SWE_Analyse = function(state, opt){
   rm(epsilon.init, H0, U0, V0)
   
   ## Output list ####
+  # interval = c(0, sort(unique(as.vector(mat.dist)))[round((log(p) / n) ^ (-1 / 2) * 5)])
+  interval = c(0, sort(unique(as.vector(mat.dist)))[round((log(p) / n) ^ (-1 / 2) * 2)])
   num = 0
   cv = 0  ## convergence
   vec.inflation.factor = rep(NA, nobs)
@@ -164,9 +166,9 @@ SWE_Analyse = function(state, opt){
   vec.taper.bandwidth = matrix(NA, 6, nobs)
   assimilate.errors = matrix(NA, 4, S)
   assimilate.errors[, 1] = c(RMSE(x.t[, 1], x.en.bar[, 1]),
-                           RMSE(x.t[1:ncoor, 1], x.en.bar[1:ncoor, 1]), 
-                           RMSE(x.t[1:ncoor + ncoor, 1], x.en.bar[1:ncoor + ncoor, 1]), 
-                           RMSE(x.t[1:ncoor + ncoor * 2, 1], x.en.bar[1:ncoor + ncoor * 2, 1]))
+                             RMSE(x.t[1:ncoor, 1], x.en.bar[1:ncoor, 1]), 
+                             RMSE(x.t[1:ncoor + ncoor, 1], x.en.bar[1:ncoor + ncoor, 1]), 
+                             RMSE(x.t[1:ncoor + ncoor * 2, 1], x.en.bar[1:ncoor + ncoor * 2, 1]))
   for(t in 1:(S - 1)){
     ## One-step Forecast
     for(j in 1:n){
@@ -197,6 +199,20 @@ SWE_Analyse = function(state, opt){
         taper.bandwidth = NA
       }
       
+      ### oracle ####
+      if(method == 'oracle'){
+        Z = (x.f - x.t[, t + 1]) / sqrt(n - 1)
+        HZ = H %*% Z
+        K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
+        mulo = prod(1 + svd(R.inv.root %*% HZ)$d ^ 2)
+        obj.MLE = logdetR + log(mulo) + t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
+        
+        inflation.fator = NA
+        objective.likelihood = obj.MLE
+        iteration.number = NA
+        taper.bandwidth = NA
+      }
+      
       ### inflation & iteration ####
       if(method == 'inflation'){
         Z = (x.f - x.f.bar) / sqrt(n - 1)
@@ -216,7 +232,7 @@ SWE_Analyse = function(state, opt){
           x.a.bar = apply(x.a, 1, mean)
           obj.MLE.old = obj.MLE
           K.old = K
-
+          
           Z = (x.f - x.a.bar) / sqrt(n - 1)
           HZ = H %*% Z
           D = svd(R.inv.root %*% HZ)$d
@@ -414,7 +430,7 @@ SWE_Analyse = function(state, opt){
         }
         likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
         lambda = likelihood.optimize$minimum
-
+        
         bw = cal_taper_bandwidth_total(t(Z), mat.dist, GC)
         Z = cal_taper_Z_total(sqrt(lambda) * t(Z), bw, GC)
         HZ = H %*% Z
@@ -424,7 +440,7 @@ SWE_Analyse = function(state, opt){
         K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
         
         x.f = sqrt(lambda) * (x.f - x.f.bar) + x.f.bar
-
+        
         inflation.fator = lambda
         objective.likelihood = obj.MLE
         iteration.number = NA
@@ -1104,7 +1120,457 @@ SWE_Analyse = function(state, opt){
         iteration.number = NA
         taper.bandwidth = bw
       }
+      
+      ### GC-iter ####
+      if(method == 'GC-iter'){
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        bw = cal_taper_bandwidth_total(t(Z), mat.dist, GC, c(0, 10 * max(mat.dist)))
+        Z = cal_taper_Z_total(t(Z), bw, GC)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        obj.MLE = log(HPHR.det(1, D, R)) +
+          t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
+        K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
+        
+        for(k in 1:10){
+          x.a = x.f + K %*% d.f
+          x.a.bar = apply(x.a, 1, mean)
+          obj.MLE.old = obj.MLE
+          K.old = K
+          
+          Z = (x.f - x.a.bar) / sqrt(n - 1)
+          Z = cal_taper_Z_total(t(Z), bw, GC)
+          HZ = H %*% Z
+          D = svd(R.inv.root %*% HZ)$d
+          obj.MLE = log(HPHR.det(1, D, R)) +
+            t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
+          K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
+          
+          print(paste(k, obj.MLE.old, obj.MLE))
+          if(obj.MLE.old - obj.MLE < 1){
+            break
+          }
+        }
+        obj.MLE = obj.MLE
+        K = K.old
+        
+        inflation.fator = NA
+        objective.likelihood = obj.MLE
+        iteration.number = k
+        taper.bandwidth = bw
+      }
+      
+      ### infl-GC-infl ####
+      if(method == 'infl-GC-infl'){
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        log.likelihood = function(lambda){
+          return(log(HPHR.det(lambda, D, R)) +
+                   t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
+        }
+        likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+        lambda = likelihood.optimize$minimum
+        
+        Z = sqrt(lambda) * Z
+        bw = cal_taper_bandwidth_total(t(Z), mat.dist, GC, c(0, 10 * max(mat.dist)))
+        Z = cal_taper_Z_total(t(Z), bw, GC)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        obj.MLE = log(HPHR.det(1, D, R)) +
+          t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
+        K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
+        
+        x.f = sqrt(lambda) * (x.f - x.f.bar) + x.f.bar
+        
+        inflation.fator = lambda
+        objective.likelihood = obj.MLE
+        iteration.number = NA
+        taper.bandwidth = bw
+      }
+      
+      ### infl-GC ####
+      if(method == 'infl-GC'){
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        log.likelihood = function(lambda){
+          return(log(HPHR.det(lambda, D, R)) +
+                   t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
+        }
+        likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+        lambda = likelihood.optimize$minimum
+        
+        bw = cal_taper_bandwidth_total(t(Z), mat.dist, GC, c(0, 10 * max(mat.dist)))
+        Z = cal_taper_Z_total(t(Z), bw, GC)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        obj.MLE = log(HPHR.det(1, D, R)) +
+          t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
+        K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
+        
+        x.f = sqrt(lambda) * (x.f - x.f.bar) + x.f.bar
+        
+        inflation.fator = lambda
+        objective.likelihood = obj.MLE
+        iteration.number = NA
+        taper.bandwidth = bw
+      }
+      
+      ### taper-iter ####
+      if(method == 'taper-iter'){
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        bw = cal_taper_bandwidth_total(t(Z), mat.dist, tapering, c(0, max(mat.dist)))
+        Z = cal_taper_Z_total(t(Z), bw, tapering)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        obj.MLE = log(HPHR.det(1, D, R)) +
+          t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
+        K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
+        
+        for(k in 1:10){
+          x.a = x.f + K %*% d.f
+          x.a.bar = apply(x.a, 1, mean)
+          obj.MLE.old = obj.MLE
+          K.old = K
+          
+          Z = (x.f - x.a.bar) / sqrt(n - 1)
+          Z = cal_taper_Z_total(t(Z), bw, tapering)
+          HZ = H %*% Z
+          D = svd(R.inv.root %*% HZ)$d
+          obj.MLE = log(HPHR.det(1, D, R)) +
+            t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
+          K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
+          
+          print(paste(k, obj.MLE.old, obj.MLE))
+          if(obj.MLE.old - obj.MLE < 1){
+            break
+          }
+        }
+        obj.MLE = obj.MLE
+        K = K.old
+        
+        inflation.fator = NA
+        objective.likelihood = obj.MLE
+        iteration.number = k
+        taper.bandwidth = bw
+      }
+      
+      ### taper-infl ####
+      if(method == 'taper-infl'){
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        bw = cal_taper_bandwidth_total(t(Z), mat.dist, tapering, c(0, max(mat.dist)))
+        Z = cal_taper_Z_total(t(Z), bw, tapering)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        log.likelihood = function(lambda){
+          return(log(HPHR.det(lambda, D, R)) +
+                   t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
+        }
+        likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+        lambda = likelihood.optimize$minimum
+        obj.MLE = likelihood.optimize$objective
+        K = Z %*% t(HZ) %*% HPHR.inv(lambda, HZ, R.inv, n)
+        
+        x.f = sqrt(lambda) * (x.f - x.f.bar) + x.f.bar
+        
+        inflation.fator = lambda
+        objective.likelihood = obj.MLE
+        iteration.number = NA
+        taper.bandwidth = bw
+      }
+      
+      ### infl-taper ####
+      if(method == 'infl-taper'){
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        log.likelihood = function(lambda){
+          return(log(HPHR.det(lambda, D, R)) +
+                   t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
+        }
+        likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+        lambda = likelihood.optimize$minimum
 
+        x.f = sqrt(lambda) * (x.f - x.f.bar) + x.f.bar
+        Z = sqrt(lambda) * Z
+        
+        bw = cal_taper_bandwidth_total(t(Z), mat.dist, tapering, c(0, max(mat.dist)))
+        Z = cal_taper_Z_total(t(Z), bw, tapering)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        obj.MLE = log(HPHR.det(1, D, R)) +
+          t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
+        K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
+        
+        inflation.fator = lambda
+        objective.likelihood = obj.MLE
+        iteration.number = NA
+        taper.bandwidth = bw
+      }
+      
+      ### band-infl ####
+      if(method == 'band-infl'){
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        bw = cal_taper_bandwidth_total(t(Z), mat.dist, banding, c(0, max(mat.dist)))
+        Z = cal_taper_Z_total(t(Z), bw, banding)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        log.likelihood = function(lambda){
+          return(log(HPHR.det(lambda, D, R)) +
+                   t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
+        }
+        likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+        lambda = likelihood.optimize$minimum
+        obj.MLE = likelihood.optimize$objective
+        K = Z %*% t(HZ) %*% HPHR.inv(lambda, HZ, R.inv, n)
+        
+        x.f = sqrt(lambda) * (x.f - x.f.bar) + x.f.bar
+        
+        inflation.fator = lambda
+        objective.likelihood = obj.MLE
+        iteration.number = NA
+        taper.bandwidth = bw
+      }
+      
+      ### infl-band ####
+      if(method == 'infl-band'){
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        log.likelihood = function(lambda){
+          return(log(HPHR.det(lambda, D, R)) +
+                   t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
+        }
+        likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+        lambda = likelihood.optimize$minimum
+        
+        x.f = sqrt(lambda) * (x.f - x.f.bar) + x.f.bar
+        Z = sqrt(lambda) * Z
+        
+        bw = cal_taper_bandwidth_total(t(Z), mat.dist, banding, c(0, max(mat.dist)))
+        Z = cal_taper_Z_total(t(Z), bw, banding)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        obj.MLE = log(HPHR.det(1, D, R)) +
+          t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
+        K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
+        
+        inflation.fator = lambda
+        objective.likelihood = obj.MLE
+        iteration.number = NA
+        taper.bandwidth = bw
+      }
+      
+      ### GC-iter ####
+      if(method == 'GC-iter'){
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        bw = cal_taper_bandwidth_total(t(Z), mat.dist, GC, c(0, max(mat.dist)))
+        Z = cal_taper_Z_total(t(Z), bw, GC)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        obj.MLE = log(HPHR.det(1, D, R)) +
+          t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
+        K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
+        
+        for(k in 1:10){
+          x.a = x.f + K %*% d.f
+          x.a.bar = apply(x.a, 1, mean)
+          obj.MLE.old = obj.MLE
+          K.old = K
+          
+          Z = (x.f - x.a.bar) / sqrt(n - 1)
+          Z = cal_taper_Z_total(t(Z), bw, GC)
+          HZ = H %*% Z
+          D = svd(R.inv.root %*% HZ)$d
+          obj.MLE = log(HPHR.det(1, D, R)) +
+            t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
+          K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
+          
+          print(paste(k, obj.MLE.old, obj.MLE))
+          if(obj.MLE.old - obj.MLE < 1){
+            break
+          }
+        }
+        obj.MLE = obj.MLE
+        K = K.old
+        
+        inflation.fator = NA
+        objective.likelihood = obj.MLE
+        iteration.number = k
+        taper.bandwidth = bw
+      }
+      
+      ### GC-infl ####
+      if(method == 'GC-infl'){
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        bw = cal_taper_bandwidth_total(t(Z), mat.dist, GC, c(0, max(mat.dist)))
+        Z = cal_taper_Z_total(t(Z), bw, GC)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        log.likelihood = function(lambda){
+          return(log(HPHR.det(lambda, D, R)) +
+                   t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
+        }
+        likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+        lambda = likelihood.optimize$minimum
+        obj.MLE = likelihood.optimize$objective
+        K = Z %*% t(HZ) %*% HPHR.inv(lambda, HZ, R.inv, n)
+        
+        x.f = sqrt(lambda) * (x.f - x.f.bar) + x.f.bar
+        
+        inflation.fator = lambda
+        objective.likelihood = obj.MLE
+        iteration.number = NA
+        taper.bandwidth = bw
+      }
+      
+      ### infl-GC ####
+      if(method == 'infl-GC'){
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        log.likelihood = function(lambda){
+          return(log(HPHR.det(lambda, D, R)) +
+                   t(d.f.bar) %*% HPHR.inv(lambda, HZ, R.inv, n) %*% d.f.bar)
+        }
+        likelihood.optimize = optimize(log.likelihood, c(0.1, 10))
+        lambda = likelihood.optimize$minimum
+        
+        x.f = sqrt(lambda) * (x.f - x.f.bar) + x.f.bar
+        Z = sqrt(lambda) * Z
+        
+        bw = cal_taper_bandwidth_total(t(Z), mat.dist, GC, c(0, max(mat.dist)))
+        Z = cal_taper_Z_total(t(Z), bw, GC)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        obj.MLE = log(HPHR.det(1, D, R)) +
+          t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
+        K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
+        
+        inflation.fator = lambda
+        objective.likelihood = obj.MLE
+        iteration.number = NA
+        taper.bandwidth = bw
+      }
+      
+      ### banding ####
+      if(method == 'banding'){
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        bw = cal_taper_bandwidth_total(t(Z), mat.dist, banding, interval)
+        Z = cal_taper_Z_total(t(Z), bw, banding)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        obj.MLE = log(HPHR.det(1, D, R)) +
+          t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
+        K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
+        
+        for(k in 1:10){
+          x.a = x.f + K %*% d.f
+          x.a.bar = apply(x.a, 1, mean)
+          obj.MLE.old = obj.MLE
+          K.old = K
+          
+          Z = (x.f - x.a.bar) / sqrt(n - 1)
+          Z = cal_taper_Z_total(t(Z), bw, banding)
+          HZ = H %*% Z
+          D = svd(R.inv.root %*% HZ)$d
+          obj.MLE = log(HPHR.det(1, D, R)) +
+            t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
+          K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
+          
+          print(paste(k, obj.MLE.old, obj.MLE))
+          if(obj.MLE.old - obj.MLE < 1){
+            break
+          }
+        }
+        obj.MLE = obj.MLE
+        K = K.old
+        
+        inflation.fator = NA
+        objective.likelihood = obj.MLE
+        iteration.number = k
+        taper.bandwidth = bw
+      }
+      
+      ### tapering ####
+      if(method == 'tapering'){
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        bw = cal_taper_bandwidth_total(t(Z), mat.dist, tapering, interval)
+        Z = cal_taper_Z_total(t(Z), bw, tapering)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        obj.MLE = log(HPHR.det(1, D, R)) +
+          t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
+        K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
+        
+        for(k in 1:10){
+          x.a = x.f + K %*% d.f
+          x.a.bar = apply(x.a, 1, mean)
+          obj.MLE.old = obj.MLE
+          K.old = K
+          
+          Z = (x.f - x.a.bar) / sqrt(n - 1)
+          Z = cal_taper_Z_total(t(Z), bw, tapering)
+          HZ = H %*% Z
+          D = svd(R.inv.root %*% HZ)$d
+          obj.MLE = log(HPHR.det(1, D, R)) +
+            t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
+          K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
+          
+          print(paste(k, obj.MLE.old, obj.MLE))
+          if(obj.MLE.old - obj.MLE < 1){
+            break
+          }
+        }
+        obj.MLE = obj.MLE
+        K = K.old
+        
+        inflation.fator = NA
+        objective.likelihood = obj.MLE
+        iteration.number = k
+        taper.bandwidth = bw
+      }
+        
+      ### GC ####
+      if(method == 'GC'){
+        Z = (x.f - x.f.bar) / sqrt(n - 1)
+        bw = cal_taper_bandwidth_total(t(Z), mat.dist, GC, interval)
+        Z = cal_taper_Z_total(t(Z), bw, GC)
+        HZ = H %*% Z
+        D = svd(R.inv.root %*% HZ)$d
+        obj.MLE = log(HPHR.det(1, D, R)) +
+          t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
+        K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
+        
+        for(k in 1:10){
+          x.a = x.f + K %*% d.f
+          x.a.bar = apply(x.a, 1, mean)
+          obj.MLE.old = obj.MLE
+          K.old = K
+          
+          Z = (x.f - x.a.bar) / sqrt(n - 1)
+          Z = cal_taper_Z_total(t(Z), bw, tapering)
+          HZ = H %*% Z
+          D = svd(R.inv.root %*% HZ)$d
+          obj.MLE = log(HPHR.det(1, D, R)) +
+            t(d.f.bar) %*% HPHR.inv(1, HZ, R.inv, n) %*% d.f.bar
+          K = Z %*% t(HZ) %*% HPHR.inv(1, HZ, R.inv, n)
+          
+          print(paste(k, obj.MLE.old, obj.MLE))
+          if(obj.MLE.old - obj.MLE < 1){
+            break
+          }
+        }
+        obj.MLE = obj.MLE
+        K = K.old
+        
+        inflation.fator = NA
+        objective.likelihood = obj.MLE
+        iteration.number = k
+        taper.bandwidth = bw
+      }
+      
       ### Update ####
       x.en.temp = x.f + K %*% d.f
       x.en.bar[, t + 1] = apply(x.en.temp, 1, mean)
@@ -1116,9 +1582,9 @@ SWE_Analyse = function(state, opt){
       print(paste('Boot', boot, 'Step', t, 'error', round(RMSE(x.t[, t + 1], x.en.bar[, t + 1]), 3)))
     }
     assimilate.errors[, t + 1] = c(RMSE(x.t[, t + 1], x.en.bar[, t + 1]),
-                               RMSE(x.t[1:ncoor, t + 1], x.en.bar[1:ncoor, t + 1]), 
-                               RMSE(x.t[1:ncoor + ncoor, t + 1], x.en.bar[1:ncoor + ncoor, t + 1]), 
-                               RMSE(x.t[1:ncoor + ncoor * 2, t + 1], x.en.bar[1:ncoor + ncoor * 2, t + 1]))
+                                   RMSE(x.t[1:ncoor, t + 1], x.en.bar[1:ncoor, t + 1]), 
+                                   RMSE(x.t[1:ncoor + ncoor, t + 1], x.en.bar[1:ncoor + ncoor, t + 1]), 
+                                   RMSE(x.t[1:ncoor + ncoor * 2, t + 1], x.en.bar[1:ncoor + ncoor * 2, t + 1]))
     
     if(assimilate.errors[1, t + 1] > 20 | is.na(assimilate.errors[1, t + 1])){
       cv = 1
@@ -1135,7 +1601,7 @@ SWE_Analyse = function(state, opt){
     inflation = vec.inflation.factor,
     bandwidth = vec.taper.bandwidth,
     option = opt 
-    )
+  )
   
   return(output)
 }

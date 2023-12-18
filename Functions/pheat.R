@@ -1,1 +1,0 @@
-pheat = function(x){corrplot::corrplot(x, method = 'color', is.corr = F)}
