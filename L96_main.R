@@ -9,15 +9,15 @@ source('Code/Functions/cal_HPHR.R')
 source('Code/Functions/cal_RMSE.R')
 source('Code/Functions/cal_taper_cov_L96.R')
 source('Code/Functions/L96_State.R')
-source('Code/Functions/L96_Analysis_DLC.R')
+source('Code/Functions/L96_Analysis.R')
 source('Code/Functions/RK4.R')
 
-methods = c('banding-ev-p', 'tapering-ev-p', 'GC-ev-p')
+methods = c('GC-ev-p')
 param = data.frame()
 for(mt in methods){
   for(f in 4:12){
     is.iter = T
-    for(b in 1:10){
+    for(b in 1:1){
       param = rbind(param, data.frame(
         mt = mt, f = f, b = b, is.iter = is.iter
       ))
@@ -41,14 +41,14 @@ setting = setting %>%
   rbind(c(200, 200, 20, 4)) %>%
   rbind(c(200, 200, 30, 4)) %>%
   rbind(c(200, 200, 40, 4)) %>%
-  rbind(c(500, 500, 20, 4)) %>%
-  rbind(c(500, 500, 30, 4)) %>%
-  rbind(c(500, 500, 40, 4)) %>%
+  # rbind(c(500, 500, 20, 4)) %>%
+  # rbind(c(500, 500, 30, 4)) %>%
+  # rbind(c(500, 500, 40, 4)) %>%
   slice(-1)
-task.name = 'L96_set24_taper-ev-p'
+task.name = 'L96_set25_GC-ev-p_scaleD'
 dir.create(paste0('Output/L96_test/', task.name))
 
-cores = 10
+cores = 9
 cl = makeCluster(cores)
 registerDoParallel(cl, cores = cores)
 
@@ -125,8 +125,8 @@ for(i in 1:nrow(setting)){
               m = mean(RMSE, na.rm = T)) %>%
     mutate(method = factor(method, levels = methods)) %>%
     ggplot()+
-    geom_ribbon(aes(x = F.set, ymin = l, ymax = u, color = method, fill = method), alpha = .1)+
-    # geom_line(aes(x = F.set, y = m, color = method))+
+    # geom_ribbon(aes(x = F.set, ymin = l, ymax = u, color = method, fill = method), alpha = .1)+
+    geom_line(aes(x = F.set, y = m, color = method))+
     # geom_line(aes(x = F.set, y = l, color = method))+
     labs(main = paste(p, q, n, S.seq))
   print(g)
