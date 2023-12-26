@@ -1,4 +1,4 @@
-banding = function(z){
+banding = BL = function(z){
   if(z <= 1){
     return(1)
   }else{
@@ -6,7 +6,7 @@ banding = function(z){
   }
 }
 
-tapering = function(z){
+tapering = CZZ = function(z){
   if(z <= 0.5){
     return(1)
   }else if(z > 0.5 & z <=1){
@@ -85,6 +85,31 @@ cal_taper_Z = function(x, taper.bandwidth, mat.dist, taper.func, ndim = min(n, p
   Sigma.hat.eigen.values = Sigma.hat.eigen$values
   Sigma.hat.eigen.vectors = Sigma.hat.eigen$vectors
   Sigma.hat.eigen.values[which(Sigma.hat.eigen.values < 1e-5)] = 1e-5
+  Sigma.tilde.root = Sigma.hat.eigen.vectors %*% diag(Sigma.hat.eigen.values ^ 0.5)
+  
+  return(Sigma.tilde.root)
+}
+
+cal_taper_Z2 = function(x, taper.bandwidth, mat.dist, taper.func, sumeigen = 1){
+  n = nrow(x)
+  p = ncol(x)
+  
+  Sigma.hat = t(x) %*% x
+  mat.dist.taper = diag(1, p)
+  for(i in 1:(p - 1)){
+    for(j in (i + 1):p){
+      mat.dist.taper[i, j] = mat.dist.taper[j, i] = taper.func(mat.dist[i, j] / taper.bandwidth)
+    }
+  }
+  Sigma.hat = Sigma.hat * mat.dist.taper
+  Sigma.hat.eigen = RSpectra::eigs(Sigma.hat, p)
+  Sigma.hat.eigen.values = Sigma.hat.eigen$values
+  Sigma.hat.eigen.vectors = Sigma.hat.eigen$vectors
+  Sigma.hat.eigen.values[which(Sigma.hat.eigen.values < 1e-5)] = 1e-5
+  sumeigen.per = cumsum(Sigma.hat.eigen.values) / sum(Sigma.hat.eigen.values)
+  trun = which(sumeigen.per >= sumeigen)[1]
+  Sigma.hat.eigen.values = Sigma.hat.eigen.values[1:trun]
+  Sigma.hat.eigen.vectors = Sigma.hat.eigen.vectors[, 1:trun]
   Sigma.tilde.root = Sigma.hat.eigen.vectors %*% diag(Sigma.hat.eigen.values ^ 0.5)
   
   return(Sigma.tilde.root)

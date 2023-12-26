@@ -12,16 +12,13 @@ source('Code/Functions/L96_State.R')
 source('Code/Functions/L96_Analysis.R')
 source('Code/Functions/RK4.R')
 
-methods = c('GC-ev-p')
+methods = c('standard')
 param = data.frame()
-for(mt in methods){
-  for(f in 4:12){
-    is.iter = T
-    for(b in 1:1){
-      param = rbind(param, data.frame(
-        mt = mt, f = f, b = b, is.iter = is.iter
-      ))
-    }
+for(f in 4:12){
+  for(b in 1:1){
+    param = rbind(param, data.frame(
+      f = f, b = b
+    ))
   }
 }
 
@@ -39,13 +36,13 @@ setting = setting %>%
   # rbind(c(100, 100, 30, 4)) %>%
   # rbind(c(100, 100, 40, 4)) %>%
   rbind(c(200, 200, 20, 4)) %>%
-  rbind(c(200, 200, 30, 4)) %>%
-  rbind(c(200, 200, 40, 4)) %>%
+  # rbind(c(200, 200, 30, 4)) %>%
+  # rbind(c(200, 200, 40, 4)) %>%
   # rbind(c(500, 500, 20, 4)) %>%
   # rbind(c(500, 500, 30, 4)) %>%
   # rbind(c(500, 500, 40, 4)) %>%
   slice(-1)
-task.name = 'L96_set25_GC-ev-p_scaleD'
+task.name = 'L96_task101_sumeigen0.9'
 dir.create(paste0('Output/L96_test/', task.name))
 
 cores = 9
@@ -67,12 +64,8 @@ for(i in 1:nrow(setting)){
       print(param[j, ])
       f = param$f[j]
       b = param$b[j]
-      mt = param$mt[j]
-      is.iter = param$is.iter[j]
-      filename = paste0(mt, '_F', f, '_B', b, '.Rdata')
+      filename = paste0('F', f, '_B', b, '.Rdata')
       
-      interval = c((log(p) / n) ^ (-1 / 2) / 5, (log(p) / n) ^ (-1 / 2) * 5)
-
       set.seed(b)
       option = list(
         p = p,
@@ -84,17 +77,20 @@ for(i in 1:nrow(setting)){
         sigma = 1,
         rho = 0.5,
         n = n,
-        method = mt,
         F.set = f,
-        is.iter = is.iter,
-        interval = interval,
-        sigma.in = 0.1
+        sigma.in = 0.1,
+        taper = GC,
+        is.oracle = F,
+        is.inflation = T,
+        is.iteration = T,
+        interval = c((log(p) / n) ^ (-1 / 2) / 5, (log(p) / n) ^ (-1 / 2) * 5),
+        neigen = p
       )
 
       state = L96_State(option)
       analyse = tryCatch(
         expr = {
-          L96_Analyse(state, option)
+          L96_Analysis(state, option)
         },
         error = function(e){
           list(converge = 1, error = rep(NA, 2000))
@@ -118,18 +114,18 @@ for(i in 1:nrow(setting)){
     mutate(method = factor(method, levels = methods)) %>%
     spread(F.set, RMSE) %>%
     print()
-  g = result %>%
-    group_by(method, F.set) %>%
-    summarise(u = max(RMSE, na.rm = T),
-              l = min(RMSE, na.rm = T),
-              m = mean(RMSE, na.rm = T)) %>%
-    mutate(method = factor(method, levels = methods)) %>%
-    ggplot()+
-    # geom_ribbon(aes(x = F.set, ymin = l, ymax = u, color = method, fill = method), alpha = .1)+
-    geom_line(aes(x = F.set, y = m, color = method))+
-    # geom_line(aes(x = F.set, y = l, color = method))+
-    labs(main = paste(p, q, n, S.seq))
-  print(g)
+  # g = result %>%
+  #   group_by(method, F.set) %>%
+  #   summarise(u = max(RMSE, na.rm = T),
+  #             l = min(RMSE, na.rm = T),
+  #             m = mean(RMSE, na.rm = T)) %>%
+  #   mutate(method = factor(method, levels = methods)) %>%
+  #   ggplot()+
+  #   geom_ribbon(aes(x = F.set, ymin = l, ymax = u, color = method, fill = method), alpha = .1)+
+  #   geom_line(aes(x = F.set, y = m, color = method))+
+  #   # geom_line(aes(x = F.set, y = l, color = method))+
+  #   labs(main = paste(p, q, n, S.seq))
+  # print(g)
 }
 stopCluster(cl)
 stopImplicitCluster()
