@@ -120,7 +120,6 @@ L96_Analysis = function(state, option){
         K.old = K
         
         Z = (x.f - x.a.bar) / sqrt(n - 1)
-        bw = cal_taper_bandwidth(t(Z), mat.dist, taper, interval)
         Z = cal_taper_Z(t(Z), bw, mat.dist, taper, ndim = p)
         
         A1 = svd(Z)$d ^ 2

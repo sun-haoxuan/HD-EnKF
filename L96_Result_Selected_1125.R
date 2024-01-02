@@ -1302,23 +1302,28 @@ for(mt in c('banding', 'tapering', 'GC')){
   ggsave(paste0('Output/L96_test/L96_set30_GC-neigen/L96_neigen-', mt, '_p', p, '_n', n, '.png'), g, width = 4, height = 3.5, dpi = 600)
 }
 
-## GC-block ####
-read.csv('Output/L96_final_1125/Result/result-all_231225.csv') %>%
-  filter(p == 200 & n == 20) %>%
-  select(method, F.set, RMSE) %>%
-  spread(F.set, RMSE)
-
+## taper-block ####
 dir.open = 'Output/L96_test/L96_set32_block/L96_p200_q200_n20_seq4/'
 result = data.frame()
-for(taper in c('banding', 'tapering', 'GC')){
-  for(block in c(5, 10)){
-    for(overlap in c(1, 3, 5)){
+for(taper in c('BL', 'CZZ', 'GC')){
+  for(number.block in c(5)){
+    for(overlap.block in c(1, 3)){
       for(f in 4:12){
-        load(paste0(dir.open, taper, '-block', block, '_ol', overlap, '_F', f, '_B', 1, '.Rdata'))
+        rmse.all = foreach(b = 1:10, .combine = 'rbind') %do%
+          {
+            load(file = paste0(dir.open, taper, '_block_a_', number.block, '_overlap', overlap.block, '_F', f, '_B', b, '.Rdata'))
+            data.frame(
+              boot = b,
+              RMSE = sqrt(mean(analyse$error[1001:2000] ^ 2))
+            )
+          }
+        b = rmse.all %>% arrange(RMSE) %>% slice(1) %>% pull(boot)
+        # b = 1
+        load(file = paste0(dir.open, taper, '_block_a_', number.block, '_overlap', overlap.block, '_F', f, '_B', b, '.Rdata'))
         tmp = data.frame(
           taper = taper,
-          block = block,
-          overlap = overlap,
+          number.block = number.block,
+          overlap.block = overlap.block,
           F.set = f,
           RMSE = sqrt(mean(analyse$error[1001:2000] ^ 2))
         )
@@ -1328,44 +1333,60 @@ for(taper in c('banding', 'tapering', 'GC')){
   }
 }
 result %>%
-  group_by(taper, block, overlap) %>%
+  group_by(taper, number.block, overlap.block) %>%
+  spread(F.set, RMSE)
+read.csv('Output/L96_final_1125/Result/result-all_231225.csv') %>%
+  filter(p == 200 & n == 20) %>%
+  select(method, F.set, RMSE) %>%
   spread(F.set, RMSE)
 dat1 = read.csv('Output/L96_final_1125/Result/result-all_231225.csv') %>%
   filter(p == 200 & n == 20 & method %in% c('standard', 'oracle', 'HD-EnKF(GC)')) %>%
   select(method, F.set, RMSE)
 dat1$method[which(dat1$method == 'HD-EnKF(GC)')] = 'HD-EnKF'
 dat2 = result %>%
-  filter(taper == 'GC' & block == 5 & overlap == 3) %>%
+  filter(taper == 'GC' & number.block == 5 & overlap.block == 1) %>%
   mutate(method = 'HD-EnKF(block)') %>%
   select(method, F.set, RMSE)
 dat.plot = rbind(dat1, dat2)  %>%
-  mutate(method = factor(method, c('standard', 'HD-EnKF(block)', 'HD-EnKF', 'oracle')))
+  mutate(method = factor(method, c('standard', 'HD-EnKF', 'HD-EnKF(block)', 'oracle'))) %>%
+  filter(method %in% c('HD-EnKF', 'HD-EnKF(block)'))
 g = dat.plot %>%
   ggplot()+
   geom_line(aes(x = F.set, y = RMSE, color = method))+
-  scale_color_manual(values = c('#8B0000', '#8B4500', '#00008B', '#800080'))+
+  # scale_color_manual(values = c('#8B0000', '#8B4500', '#00008B', '#800080'))+
+  scale_color_manual(values = c('#00008B','#8B4500'))+
   labs(x = 'Force term', y = 'RMSE')+
   theme_bw()+
   theme(legend.position = 'bottom',
         legend.title = element_blank())
 print(g)
-ggsave(paste0('Output/L96_test/L96_set32_block/L96_block.png'), g, width = 4, height = 3.5, dpi = 600)
+ggsave(paste0('Output/L96_test/L96_set32_block/L96_block.png'), g, width = 6, height = 5, dpi = 600)
 
 ## sum-eigen ####
-read.csv('Output/L96_final_1125/Result/result-ev-p_231220.csv') %>%
+read.csv('Output/L96_final_1125/Result/result-all_231225.csv') %>%
   filter(p == 200 & n == 20) %>%
   select(method, F.set, RMSE) %>%
   spread(F.set, RMSE)
 
-dir.open = 'Output/L96_test/L96_set33_taper-sumeigen/L96_p200_q200_n20_seq4/'
+dir.open = 'Output/L96_test/L96_set34_sumeigen/L96_p200_q200_n20_seq4/'
 result = data.frame()
-for(taper in c('banding', 'tapering', 'GC')){
-  for(sev in c(0.9, 0.95, 0.99)){
+for(taper in c('BL', 'CZZ', 'GC')){
+  for(seg in c(0.5, 0.9, 0.95, 0.99)){
     for(f in 4:12){
-      load(paste0(dir.open, taper, '_sev', sev, '_F', f, '_B', 1, '.Rdata'))
+      # rmse.all = foreach(b = 1:10, .combine = 'rbind') %do%
+      #   {
+      #     load(file = paste0(dir.open, taper, '_sumeigen', seg, '_F', f, '_B', b, '.Rdata'))
+      #     data.frame(
+      #       boot = b,
+      #       RMSE = sqrt(mean(analyse$error[1001:2000] ^ 2))
+      #     )
+      #   }
+      # b = rmse.all %>% arrange(RMSE) %>% slice(1) %>% pull(boot)
+      b = 1
+      load(file = paste0(dir.open, taper, '_sumeigen', seg, '_F', f, '_B', b, '.Rdata'))
       tmp = data.frame(
         taper = taper,
-        sev = sev,
+        sumeigen = seg,
         F.set = f,
         RMSE = sqrt(mean(analyse$error[1001:2000] ^ 2))
       )
@@ -1374,15 +1395,28 @@ for(taper in c('banding', 'tapering', 'GC')){
   }
 }
 result %>%
-  group_by(taper, sev) %>%
+  group_by(taper, sumeigen) %>%
   spread(F.set, RMSE)
-g = result %>%
+dat1 = read.csv('Output/L96_final_1125/Result/result-all_231225.csv') %>%
+  filter(p == 200 & n == 20 & method %in% c('standard', 'oracle', 'HD-EnKF(GC)')) %>%
+  select(method, F.set, RMSE)
+dat1$method[which(dat1$method == 'HD-EnKF(GC)')] = 'HD-EnKF(100%)'
+dat2 = result %>%
+  filter(taper == 'GC') %>%
+  mutate(method = paste0('HD-EnKF(', sumeigen * 100, '%)')) %>%
+  select(method, F.set, RMSE)
+dat.plot = rbind(dat1, dat2) %>%
+  mutate(method = factor(method, c('standard', paste0('HD-EnKF(', c(50, 90, 95, 99, 100), '%)'), 'oracle'))) %>%
+  filter(method %in%  paste0('HD-EnKF(', c(50, 90, 95, 99, 100), '%)'))
+g = dat.plot %>%
   ggplot()+
   geom_line(aes(x = F.set, y = RMSE, color = method))+
+  # scale_color_manual(values = c('#8B0000', colorRampPalette(c('#8B4500', '#00008B'))(5), '#800080'))+
+  scale_color_manual(values = c('#8B4500',  '#8B6B00', '#004500', '#5A4A8B', '#00008B'))+
+  # scale_color_manual(values = colorRampPalette(c('#8B4500', '#00008B'))(5))+
   labs(x = 'Force term', y = 'RMSE')+
-  # ylim(c(0, 5.5))+
   theme_bw()+
-  theme(legend.title = element_blank(),
-        legend.position = 'bottom')
+  theme(legend.position = 'bottom',
+        legend.title = element_blank())
 print(g)
-ggsave(paste0('Output/L96_test/L96_set33_taper-sumeigen/L96_sumeigen.png'), g, width = 4, height = 3.5, dpi = 600)
+ggsave(paste0('Output/L96_test/L96_set31_sumeigen/L96_sumeigen.png'), g, width = 8, height = 7, dpi = 600)

@@ -1,6 +1,7 @@
 rm(list = ls())
 setwd("E:/Project/EnKF_GTE")
 # setwd("~/EnKF_GTE")
+# setwd("/disk/home/sunhaoxuan/EnKF_GTE")
 library(tidyverse)
 library(foreach)
 library(doParallel)
@@ -9,7 +10,7 @@ source('Code/Functions/cal_HPHR.R')
 source('Code/Functions/cal_RMSE.R')
 source('Code/Functions/cal_taper_cov_L96.R')
 source('Code/Functions/L96_State.R')
-source('Code/Functions/L96_Analysis.R')
+source('Code/Functions/L96_Analysis_temp.R')
 source('Code/Functions/RK4.R')
 
 methods = c('standard')
@@ -101,7 +102,6 @@ for(i in 1:nrow(setting)){
       # load(file = paste0(dir.save, filename))
       
       data.frame(
-        method = mt,
         F.set = f,
         boot = b,
         cv = analyse$converge,
@@ -109,23 +109,24 @@ for(i in 1:nrow(setting)){
       )
     }
   result %>%
-    group_by(method, F.set) %>%
-    summarise(RMSE = min(RMSE, na.rm = T)) %>%
-    mutate(method = factor(method, levels = methods)) %>%
+    # group_by(method, F.set) %>%
+    # summarise(RMSE = min(RMSE, na.rm = T)) %>%
+    # mutate(method = factor(method, levels = methods)) %>%
     spread(F.set, RMSE) %>%
     print()
-  # g = result %>%
-  #   group_by(method, F.set) %>%
-  #   summarise(u = max(RMSE, na.rm = T),
-  #             l = min(RMSE, na.rm = T),
-  #             m = mean(RMSE, na.rm = T)) %>%
-  #   mutate(method = factor(method, levels = methods)) %>%
-  #   ggplot()+
-  #   geom_ribbon(aes(x = F.set, ymin = l, ymax = u, color = method, fill = method), alpha = .1)+
-  #   geom_line(aes(x = F.set, y = m, color = method))+
-  #   # geom_line(aes(x = F.set, y = l, color = method))+
-  #   labs(main = paste(p, q, n, S.seq))
-  # print(g)
+  g = result %>%
+    # group_by(method, F.set) %>%
+    group_by(F.set) %>%
+    summarise(u = max(RMSE, na.rm = T),
+              l = min(RMSE, na.rm = T),
+              m = mean(RMSE, na.rm = T)) %>%
+    mutate(method = factor(method, levels = methods)) %>%
+    ggplot()+
+    geom_ribbon(aes(x = F.set, ymin = l, ymax = u, color = method, fill = method), alpha = .1)+
+    geom_line(aes(x = F.set, y = m, color = method))+
+    # geom_line(aes(x = F.set, y = l, color = method))+
+    labs(main = paste(p, q, n, S.seq))
+  print(g)
 }
 stopCluster(cl)
 stopImplicitCluster()
